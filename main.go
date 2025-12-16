@@ -1,0 +1,98 @@
+package main
+
+import (
+	"fmt"
+	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"log"
+	"net/http"
+)
+
+type Users struct {
+	gorm.Model
+	NAME  string `gorm:"not null" json:"name" binding:"required,min=2"`
+	EMAIL string `gorm:"not null;unique" json:"email" binding:"required,email"`
+}
+
+var db *gorm.DB
+var err error
+
+func main() {
+	dsn := "host=localhost user=postgres password=1234 dbname=ecommerce_db port=5432 sslmode=disable "
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Failed to connect to DB:", err)
+	}
+	db.AutoMigrate(&Users{})
+	fmt.Println("auto migrate connected")
+
+	r := gin.Default()
+	r.GET("", Allusers)
+	r.POST("", postuser)
+	r.PUT("/:id", updateuser)
+	r.DELETE("/:id", deleteuser)
+
+	r.Run(":8080")
+
+}
+func Allusers(c *gin.Context) {
+	var user []Users
+	result := db.Find(&user)
+	if result.Error != nil {
+		c.JSON(400, gin.H{
+			"error": "something went wrong",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+func postuser(c *gin.Context) {
+	var user Users
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(400, err.Error())
+		return
+	}
+	result := db.Create(&user)
+	if result.Error != nil {
+		c.JSON(400, result.Error.Error())
+		return
+	}
+	c.JSON(200, user)
+}
+func updateuser(c *gin.Context) {
+	var user Users
+	var input Users
+	id := c.Param("id")
+	result := db.Find(&user, id)
+	if result.Error != nil {
+		c.JSON(400, result.Error.Error())
+		return
+	}
+	err := c.ShouldBindJSON(&input)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"message": err,
+		})
+		return
+	}
+	errr := db.Model(&user).Updates(input)
+	if errr.Error != nil {
+		c.JSON(400, gin.H{
+			"message": errr.Error.Error(),
+		})
+		return
+	}
+	c.JSON(200, user)
+}
+func deleteuser(c *gin.Context) {
+	id := c.Param("id")
+	result := db.Unscoped().Delete(&Users{}, id)
+	if result.Error != nil {
+		c.JSON(400, result.Error.Error())
+		return
+	}
+	c.JSON(200, gin.H{
+		"message": "user deleted",
+	})
+}
